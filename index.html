@@ -137,7 +137,7 @@ function stableAction(name){
  if(best<3) smooth="None";
  if(smooth!==stableGesture){stableGesture=smooth;stableSince=now;actionLock=false}
  const held=smooth===stableGesture ? now-stableSince : 0;
- return {gesture:smooth,held,ready:held>=500};
+ return {gesture:smooth,held,ready:held>=2000};
 }
 function loop(){
  if(!running)return;
@@ -162,8 +162,8 @@ function loop(){
      $("cursor").style.left=cursor.x+"px";$("cursor").style.top=cursor.y+"px";
      const s=stableAction(rawG);
      if(s.gesture==="Open_Palm"){
-       $("gesture").style.display="block";$("gesture").textContent="✋ OPEN PALM — HOLD";
-       $("bar").style.width=Math.min(100,s.held/500*100)+"%";
+       $("gesture").style.display="block";$("gesture").textContent="✋ OPEN PALM — HOLD 2 SEC";
+       $("bar").style.width=Math.min(100,s.held/2000*100)+"%";
      }else{
        $("gesture").style.display="none";$("bar").style.width="0%";
      }
