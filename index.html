@@ -67,7 +67,7 @@ function wordGame(){mode="pic";showGame("WORD → PICTURE");nextPic()}
 function nextPic(){
  const item=pics[Math.floor(Math.random()*pics.length)];
  let opts=[item[1]];while(opts.length<3){let x=pics[Math.floor(Math.random()*pics.length)][1];if(!opts.includes(x))opts.push(x)}opts.sort(()=>Math.random()-.5);
- $("content").innerHTML=`<div class="target">${item[0]}</div><p class="instruction">Point to a word, then 🤏 pinch and hold for 1 second.</p><div class="choices" id="choices"></div>`;
+ $("content").innerHTML=`<div class="target">${item[0]}</div><p class="instruction">Point to a word, then ✌️ two fingers to select.</p><div class="choices" id="choices"></div>`;
  opts.forEach(w=>{const b=document.createElement("button");b.className="choice";b.textContent=w;b.onclick=()=>answerPic(w===item[1],item[1]);$("choices").appendChild(b)});speak("What is this?")
 }
 function answerPic(ok,w){if(ok){scoreUp();status("✓ Correct!",true);speak("Correct. "+w);setTimeout(nextPic,850)}else{status("Try again",false);speak("Try again")}}
