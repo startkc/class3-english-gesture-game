@@ -31,7 +31,7 @@ button{border:0;border-radius:18px;padding:18px 24px;font-size:23px;font-weight:
 <main>
 <section id="menu" class="panel">
 <h2>English Gesture Game</h2>
-<p class="instruction">☝️ Point to move • ✋ Open Palm to select / drop</p>
+<p class="instruction">☝️ Point to move • ☝️ Hold finger 2 seconds to select</p>
 <div class="menu">
 <button class="primary" id="wordGame">🍎 Word → Picture</button>
 <button class="green" id="sentenceGame">🧩 Build the Sentence</button>
@@ -67,7 +67,7 @@ function wordGame(){mode="pic";showGame("WORD → PICTURE");nextPic()}
 function nextPic(){
  const item=pics[Math.floor(Math.random()*pics.length)];
  let opts=[item[1]];while(opts.length<3){let x=pics[Math.floor(Math.random()*pics.length)][1];if(!opts.includes(x))opts.push(x)}opts.sort(()=>Math.random()-.5);
- $("content").innerHTML=`<div class="target">${item[0]}</div><p class="instruction">Point to a word, then ✋ HOLD Open Palm.</p><div class="choices" id="choices"></div>`;
+ $("content").innerHTML=`<div class="target">${item[0]}</div><p class="instruction">Point to a word, then ☝️ HOLD finger for 2 seconds.</p><div class="choices" id="choices"></div>`;
  opts.forEach(w=>{const b=document.createElement("button");b.className="choice";b.textContent=w;b.onclick=()=>answerPic(w===item[1],item[1]);$("choices").appendChild(b)});speak("What is this?")
 }
 function answerPic(ok,w){if(ok){scoreUp();status("✓ Correct!",true);speak("Correct. "+w);setTimeout(nextPic,850)}else{status("Try again",false);speak("Try again")}}
@@ -75,7 +75,7 @@ function sentenceGame(){mode="sent";showGame("BUILD THE SENTENCE");newSentence()
 function newSentence(){
  target=sentences[Math.floor(Math.random()*sentences.length)].slice();placed=[];
  const pool=[...target].sort(()=>Math.random()-.5);
- $("content").innerHTML=`<p class="instruction">☝️ Point at a word • ✋ Open Palm to pick it up • Point to ANSWER • ✋ Open Palm to drop.</p><div class="answer" id="answer"></div><div class="choices" id="words"></div>`;
+ $("content").innerHTML=`<p class="instruction">☝️ Point at a word • ☝️ Hold finger 2 seconds to pick it up • Point to ANSWER • ☝️ Hold 2 seconds to drop.</p><div class="answer" id="answer"></div><div class="choices" id="words"></div>`;
  pool.forEach(w=>{const b=document.createElement("button");b.className="choice";b.textContent=w;b.dataset.word=w;b.onclick=()=>tryPlace(w,b);$("words").appendChild(b)})
 }
 function tryPlace(w,b){if(w!==target[placed.length]){status("Think again",false);speak("Try again");return}placed.push(w);b.remove();const d=document.createElement("span");d.className="word";d.textContent=w;$("answer").appendChild(d);speak(w.toLowerCase());if(placed.length===target.length){scoreUp();status("⭐ Excellent!",true);speak(target.join(" "));setTimeout(newSentence,1100)}}
@@ -97,7 +97,7 @@ async function startCamera(){
        baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",delegate:"GPU"},
        runningMode:"VIDEO",numHands:1,
        minHandDetectionConfidence:.50,minHandPresenceConfidence:.50,minTrackingConfidence:.50,
-       cannedGesturesClassifierOptions:{scoreThreshold:.45,categoryAllowlist:["Open_Palm","Pointing_Up"]}
+       cannedGesturesClassifierOptions:{scoreThreshold:.45,categoryAllowlist:["Pointing_Up"]}
      });
    }catch(gpuError){
      console.warn("GPU delegate failed; retrying with CPU",gpuError);
@@ -105,7 +105,7 @@ async function startCamera(){
        baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",delegate:"CPU"},
        runningMode:"VIDEO",numHands:1,
        minHandDetectionConfidence:.50,minHandPresenceConfidence:.50,minTrackingConfidence:.50,
-       cannedGesturesClassifierOptions:{scoreThreshold:.45,categoryAllowlist:["Open_Palm","Pointing_Up"]}
+       cannedGesturesClassifierOptions:{scoreThreshold:.45,categoryAllowlist:["Pointing_Up"]}
      });
    }
    running=true;$("setup").textContent="✋ Camera ready. Stand 1–2 metres away and point at the screen.";
@@ -161,13 +161,13 @@ function loop(){
      $("cursor").style.display="block";
      $("cursor").style.left=cursor.x+"px";$("cursor").style.top=cursor.y+"px";
      const s=stableAction(rawG);
-     if(s.gesture==="Open_Palm"){
-       $("gesture").style.display="block";$("gesture").textContent="✋ OPEN PALM — HOLD 2 SEC";
+     if(s.gesture==="Pointing_Up"){
+       $("gesture").style.display="block";$("gesture").textContent="☝️ POINT & HOLD 2 SEC";
        $("bar").style.width=Math.min(100,s.held/2000*100)+"%";
      }else{
        $("gesture").style.display="none";$("bar").style.width="0%";
      }
-     if(s.gesture==="Open_Palm" && s.ready && !actionLock){actionLock=true;performPalm({x:cursor.x,y:cursor.y})}
+     if(s.gesture==="Pointing_Up" && s.ready && !actionLock){actionLock=true;performPalm({x:cursor.x,y:cursor.y})}
    }else if(now-lastGoodHand>250){
      $("cursor").style.display="none";$("gesture").style.display="none";$("bar").style.width="0%";
      gestureHistory=[];stableGesture="";stableSince=0;actionLock=false;cursor.visible=false;
