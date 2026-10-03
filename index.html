@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Class 3 English Gesture Game</title>
+<style>
+:root{--blue:#3568d4;--green:#4caf76;--purple:#8862c9;--red:#d65b5b;--ink:#172033;--muted:#657084;--bg:#f4f7fb}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;font-family:Arial,sans-serif;background:var(--bg);color:var(--ink)}
+header{height:70px;background:#fff;border-bottom:1px solid #dce2ec;display:flex;align-items:center;justify-content:space-between;padding:0 22px}
+h1{font-size:26px;margin:0}.score{font-size:21px;font-weight:700}
+main{height:calc(100% - 70px);display:flex;align-items:center;justify-content:center;padding:18px}
+.panel{width:min(1120px,96vw);max-height:94%;overflow:auto;background:#fff;border:1px solid #dce2ec;border-radius:24px;padding:26px;text-align:center}
+h2{font-size:38px;margin:8px}.instruction{color:var(--muted);font-size:19px}
+.menu{display:grid;grid-template-columns:1fr 1fr;gap:16px;max-width:820px;margin:28px auto}
+button{border:0;border-radius:18px;padding:18px 24px;font-size:23px;font-weight:700;min-height:64px;cursor:pointer}
+.primary{background:var(--blue);color:white}.green{background:var(--green);color:white}.purple{background:var(--purple);color:white}.red{background:var(--red);color:white}.dark{background:#273043;color:white}
+.target{font-size:90px;margin:15px}.choices{display:flex;gap:16px;justify-content:center;flex-wrap:wrap}.choice{background:var(--blue);color:white;min-width:210px}
+.answer{min-height:105px;background:#eef1f6;border-radius:20px;padding:16px;display:flex;gap:10px;justify-content:center;align-items:center;flex-wrap:wrap;margin:16px 0}.word{background:var(--green);color:white;border-radius:12px;padding:11px 18px;font-size:27px;font-weight:700}
+.status{min-height:38px;font-size:27px;font-weight:700;margin:10px}.good{color:var(--green)}.bad{color:var(--red)}
+#video{position:fixed;right:10px;bottom:10px;width:190px;height:140px;object-fit:cover;transform:scaleX(-1);border-radius:14px;opacity:.20;display:none;border:2px solid #fff;z-index:10}
+#cursor{position:fixed;width:50px;height:50px;border:5px solid var(--blue);border-radius:50%;display:none;pointer-events:none;z-index:20;transform:translate(-50%,-50%);box-shadow:0 0 0 3px rgba(255,255,255,.8)}
+#gesture{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#fff;border:2px solid var(--green);border-radius:24px;padding:10px 18px;font-weight:700;display:none;z-index:21}
+#bar{position:fixed;left:50%;bottom:0;transform:translateX(-50%);width:0;height:6px;background:var(--green);z-index:22}
+#setup{font-size:18px}
+@media(max-width:700px){.menu{grid-template-columns:1fr}h2{font-size:30px}.target{font-size:65px}button{font-size:19px}.panel{padding:18px}}
+</style>
+</head>
+<body>
+<header><h1>📚 Class 3 English</h1><div class="score">⭐ <span id="score">0</span></div></header>
+<main>
+<section id="menu" class="panel">
+<h2>English Gesture Game</h2>
+<p class="instruction">☝️ Point to move • ✋ Open Palm to select / drop</p>
+<div class="menu">
+<button class="primary" id="wordGame">🍎 Word → Picture</button>
+<button class="green" id="sentenceGame">🧩 Build the Sentence</button>
+<button class="purple" id="missingGame">✏️ Missing Word</button>
+<button class="dark" id="cameraBtn">📷 Start Camera & Gestures</button>
+</div>
+<p id="setup">Camera + gesture recognition will work in Safari when this page is served over HTTPS.</p>
+</section>
+<section id="game" class="panel" style="display:none">
+<h2 id="title"></h2><div id="content"></div><div id="status" class="status"></div>
+<button id="home" class="dark">⌂ Home</button>
+</section>
+</main>
+<video id="video" autoplay playsinline muted></video>
+<div id="cursor"></div><div id="gesture">✋ Open Palm</div><div id="bar"></div>
+<script type="module">
+import {GestureRecognizer,FilesetResolver} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/vision_bundle.mjs";
+const $=id=>document.getElementById(id);
+let recognizer=null,stream=null,running=false,lastVideo=-1;
+let cursor={x:0,y:0,visible:false},stableGesture="",stableSince=0,actionLock=false;
+let score=0,mode="",target=[],placed=[],dragging=null;
+function speak(text){if(!("speechSynthesis" in window))return;speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang="en-IN";u.rate=.82;speechSynthesis.speak(u)}
+function scoreUp(){score++;$("score").textContent=score}
+function showGame(t){$("menu").style.display="none";$("game").style.display="block";$("title").textContent=t;$("status").textContent=""}
+function status(t,good=true){$("status").textContent=t;$("status").className="status "+(good?"good":"bad")}
+function home(){mode="";dragging=null;$("game").style.display="none";$("menu").style.display="block"}
+$("home").onclick=home;
+const pics=[["🍎","APPLE"],["🐱","CAT"],["⚽","BALL"],["☀️","SUN"],["📖","BOOK"],["🌳","TREE"]];
+const sentences=[["I","GO","TO","SCHOOL"],["THIS","IS","A","CAT"],["I","LIKE","MY","BOOK"],["WE","PLAY","WITH","A","BALL"],["THE","SUN","IS","HOT"]];
+const missing=[["I ___ a student.",["am","is","are"],"am"],["The sun is ___.",["hot","blue","cold"],"hot"],["We ___ to school.",["go","goes","going"],"go"],["She ___ a book.",["has","have","are"],"has"],["They ___ happy.",["are","is","am"],"are"]];
+function wordGame(){mode="pic";showGame("WORD → PICTURE");nextPic()}
+function nextPic(){
+ const item=pics[Math.floor(Math.random()*pics.length)];
+ let opts=[item[1]];while(opts.length<3){let x=pics[Math.floor(Math.random()*pics.length)][1];if(!opts.includes(x))opts.push(x)}opts.sort(()=>Math.random()-.5);
+ $("content").innerHTML=`<div class="target">${item[0]}</div><p class="instruction">Point to a word, then ✋ HOLD Open Palm.</p><div class="choices" id="choices"></div>`;
+ opts.forEach(w=>{const b=document.createElement("button");b.className="choice";b.textContent=w;b.onclick=()=>answerPic(w===item[1],item[1]);$("choices").appendChild(b)});speak("What is this?")
+}
+function answerPic(ok,w){if(ok){scoreUp();status("✓ Correct!",true);speak("Correct. "+w);setTimeout(nextPic,850)}else{status("Try again",false);speak("Try again")}}
+function sentenceGame(){mode="sent";showGame("BUILD THE SENTENCE");newSentence()}
+function newSentence(){
+ target=sentences[Math.floor(Math.random()*sentences.length)].slice();placed=[];
+ const pool=[...target].sort(()=>Math.random()-.5);
+ $("content").innerHTML=`<p class="instruction">☝️ Point at a word • ✋ Open Palm to pick it up • Point to ANSWER • ✋ Open Palm to drop.</p><div class="answer" id="answer"></div><div class="choices" id="words"></div>`;
+ pool.forEach(w=>{const b=document.createElement("button");b.className="choice";b.textContent=w;b.dataset.word=w;b.onclick=()=>tryPlace(w,b);$("words").appendChild(b)})
+}
+function tryPlace(w,b){if(w!==target[placed.length]){status("Think again",false);speak("Try again");return}placed.push(w);b.remove();const d=document.createElement("span");d.className="word";d.textContent=w;$("answer").appendChild(d);speak(w.toLowerCase());if(placed.length===target.length){scoreUp();status("⭐ Excellent!",true);speak(target.join(" "));setTimeout(newSentence,1100)}}
+function missingGame(){mode="missing";showGame("MISSING WORD");nextMissing()}
+function nextMissing(){const q=missing[Math.floor(Math.random()*missing.length)];$("content").innerHTML=`<div class="target" style="font-size:55px">${q[0]}</div><p class="instruction">Choose the missing word.</p><div class="choices" id="choices"></div>`;q[1].slice().sort(()=>Math.random()-.5).forEach(w=>{const b=document.createElement("button");b.className="choice";b.textContent=w;b.onclick=()=>{if(w===q[2]){scoreUp();status("✓ Well done!",true);speak("Well done");setTimeout(nextMissing,850)}else{status("Try again",false);speak("Try again")}};$("choices").appendChild(b)})}
+$("wordGame").onclick=wordGame;$("sentenceGame").onclick=sentenceGame;$("missingGame").onclick=missingGame;
+async function startCamera(){
+ try{
+   $("setup").textContent="Loading hand gesture model…";
+   const vision=await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm");
+   recognizer=await GestureRecognizer.createFromOptions(vision,{
+     baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",delegate:"GPU"},
+     runningMode:"VIDEO",numHands:1,
+     minHandDetectionConfidence:.65,minHandPresenceConfidence:.65,minTrackingConfidence:.65,
+     cannedGesturesClassifierOptions:{scoreThreshold:.70,categoryAllowlist:["Open_Palm","Pointing_Up"]}
+   });
+   stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"user",width:{ideal:1280},height:{ideal:720}},audio:false});
+   $("video").srcObject=stream;$("video").style.display="block";
+   await $("video").play();running=true;$("setup").textContent="✋ Gesture camera is ready. Stand 1–2 metres away.";
+   speak("Camera ready. Point and use your open palm.");
+   requestAnimationFrame(loop);
+ }catch(e){console.error(e);$("setup").textContent="Camera/model could not start. Allow camera access in Safari and make sure this page is HTTPS.";speak("Please allow camera access.")}
+}
+$("cameraBtn").onclick=startCamera;
+function mapPoint(lm){const v=$("video");const rect=v.getBoundingClientRect();return {x:rect.left+(1-lm.x)*rect.width,y:rect.top+lm.y*rect.height}}
+function stableAction(name){const now=performance.now();if(name!==stableGesture){stableGesture=name;stableSince=now;actionLock=false}const held=now-stableSince;return {held,ready:held>=650}}
+function loop(){
+ if(!running)return;
+ const v=$("video");
+ if(v.readyState>=2 && v.currentTime!==lastVideo){
+   lastVideo=v.currentTime;
+   const r=recognizer.recognizeForVideo(v,performance.now());
+   if(r.landmarks?.length){
+     const lm=r.landmarks[0];const g=r.gestures?.[0]?.[0]?.categoryName||"None";const p=mapPoint(lm[8]);
+     cursor.x=p.x;cursor.y=p.y;cursor.visible=true;
+     $("cursor").style.display="block";$("cursor").style.left=p.x+"px";$("cursor").style.top=p.y+"px";
+     const s=stableAction(g);
+     if(g==="Open_Palm"){$("gesture").style.display="block";$("gesture").textContent="✋ OPEN PALM";$("bar").style.width=Math.min(100,s.held/650*100)+"%"}else{$("gesture").style.display="none";$("bar").style.width="0%"}
+     if(g==="Open_Palm" && s.ready && !actionLock){actionLock=true;performPalm(p)}
+   }else{$("cursor").style.display="none";$("gesture").style.display="none";$("bar").style.width="0%";stableGesture="";stableSince=0;actionLock=false}
+ }
+ requestAnimationFrame(loop)
+}
+function performPalm(p){
+ if(mode==="pic"||mode==="missing"){const el=document.elementFromPoint(p.x,p.y);if(el?.classList.contains("choice"))el.click()}
+ else if(mode==="sent"){
+   if(!dragging){const el=document.elementFromPoint(p.x,p.y);if(el?.dataset?.word){dragging=el.dataset.word;el.style.opacity=".45";speak(dragging.toLowerCase())}}
+   else{const ans=$("answer");const r=ans.getBoundingClientRect();if(p.x>=r.left&&p.x<=r.right&&p.y>=r.top&&p.y<=r.bottom){const btn=[...$("words").children].find(x=>x.dataset.word===dragging);if(btn)tryPlace(dragging,btn);dragging=null}else dragging=null}
+   setTimeout(()=>{actionLock=false},350)
+ }
+}
+window.addEventListener("beforeunload",()=>{if(stream)stream.getTracks().forEach(t=>t.stop())});
+</script>
+</body>
+</html>
