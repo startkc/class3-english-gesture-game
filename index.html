@@ -125,6 +125,25 @@ function mapPoint(lm){
   // The camera preview is mirrored, so reverse X for natural left/right movement.
   return {x:(1-lm.x)*window.innerWidth,y:lm.y*window.innerHeight};
 }
+function dist(a,b){const dx=a.x-b.x,dy=a.y-b.y;return Math.hypot(dx,dy)}
+function angle(a,b,c){
+  const ab={x:a.x-b.x,y:a.y-b.y}, cb={x:c.x-b.x,y:c.y-b.y};
+  const den=Math.hypot(ab.x,ab.y)*Math.hypot(cb.x,cb.y);
+  if(!den)return 0;
+  return Math.acos(Math.max(-1,Math.min(1,(ab.x*cb.x+ab.y*cb.y)/den)))*180/Math.PI;
+}
+// More reliable than the built-in gesture label for this game:
+// detect the hand shape from the 21 landmarks. We only need "index finger pointing".
+function isPointingFinger(lm){
+  if(!lm || lm.length<21)return false;
+  const indexStraight=angle(lm[5],lm[6],lm[8])>155;
+  const middleBent=angle(lm[9],lm[10],lm[12])<150;
+  const ringBent=angle(lm[13],lm[14],lm[16])<150;
+  const pinkyBent=angle(lm[17],lm[18],lm[20])<150;
+  // Also require the index tip to be clearly farther from the wrist than its PIP.
+  const indexExtended=dist(lm[8],lm[5])>dist(lm[6],lm[5])*1.18;
+  return indexStraight && indexExtended && middleBent && ringBent && pinkyBent;
+}
 function stableAction(name){
  const now=performance.now();
  gestureHistory.push(name);
@@ -150,7 +169,7 @@ function loop(){
    const r=recognizer.recognizeForVideo(v,now);
    if(r.landmarks?.length){
      const lm=r.landmarks[0];
-     const rawG=r.gestures?.[0]?.[0]?.categoryName||"None";
+     const rawG=isPointingFinger(lm) ? "Pointing_Up" : "None";
      const p=mapPoint(lm[8]);
      lastGoodHand=now;
      // Smooth cursor movement so small landmark jitter is less visible.
