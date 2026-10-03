@@ -31,7 +31,7 @@ button{border:0;border-radius:18px;padding:18px 24px;font-size:23px;font-weight:
 <main>
 <section id="menu" class="panel">
 <h2>English Gesture Game</h2>
-<p class="instruction">☝️ Point and move • 🤏 Pinch and hold 1 second to select</p>
+<p class="instruction">☝️ One finger = MOVE • ✌️ Two fingers = SELECT</p>
 <div class="menu">
 <button class="primary" id="wordGame">🍎 Word → Picture</button>
 <button class="green" id="sentenceGame">🧩 Build the Sentence</button>
@@ -75,7 +75,7 @@ function sentenceGame(){mode="sent";showGame("BUILD THE SENTENCE");newSentence()
 function newSentence(){
  target=sentences[Math.floor(Math.random()*sentences.length)].slice();placed=[];
  const pool=[...target].sort(()=>Math.random()-.5);
- $("content").innerHTML=`<p class="instruction">☝️ Point at a word • Point to a word, 🤏 pinch and hold 1 second, then move it to the answer area.</p><div class="answer" id="answer"></div><div class="choices" id="words"></div>`;
+ $("content").innerHTML=`<p class="instruction">☝️ Point at a word • ☝️ Point to a word • ✌️ Select • ☝️ Move • ✌️ Select to drop.</p><div class="answer" id="answer"></div><div class="choices" id="words"></div>`;
  pool.forEach(w=>{const b=document.createElement("button");b.className="choice";b.textContent=w;b.dataset.word=w;b.onclick=()=>tryPlace(w,b);$("words").appendChild(b)})
 }
 function tryPlace(w,b){if(w!==target[placed.length]){status("Think again",false);speak("Try again");return}placed.push(w);b.remove();const d=document.createElement("span");d.className="word";d.textContent=w;$("answer").appendChild(d);speak(w.toLowerCase());if(placed.length===target.length){scoreUp();status("⭐ Excellent!",true);speak(target.join(" "));setTimeout(newSentence,1100)}}
@@ -97,7 +97,7 @@ async function startCamera(){
        baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",delegate:"GPU"},
        runningMode:"VIDEO",numHands:1,
        minHandDetectionConfidence:.50,minHandPresenceConfidence:.50,minTrackingConfidence:.50,
-       cannedGesturesClassifierOptions:{scoreThreshold:.45,categoryAllowlist:["Pointing_Up"]}
+       cannedGesturesClassifierOptions:{scoreThreshold:.45,categoryAllowlist:["Pointing_Up","Victory"]}
      });
    }catch(gpuError){
      console.warn("GPU delegate failed; retrying with CPU",gpuError);
@@ -105,7 +105,7 @@ async function startCamera(){
        baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",delegate:"CPU"},
        runningMode:"VIDEO",numHands:1,
        minHandDetectionConfidence:.50,minHandPresenceConfidence:.50,minTrackingConfidence:.50,
-       cannedGesturesClassifierOptions:{scoreThreshold:.45,categoryAllowlist:["Pointing_Up"]}
+       cannedGesturesClassifierOptions:{scoreThreshold:.45,categoryAllowlist:["Pointing_Up","Victory"]}
      });
    }
    running=true;$("setup").textContent="✋ Camera ready. Stand 1–2 metres away and point at the screen.";
@@ -126,23 +126,30 @@ function mapPoint(lm){
   return {x:(1-lm.x)*window.innerWidth,y:lm.y*window.innerHeight};
 }
 function dist(a,b){const dx=a.x-b.x,dy=a.y-b.y;return Math.hypot(dx,dy)}
-function pinchGesture(lm){
-  if(!lm || lm.length<21)return false;
-  // Normalize pinch distance by palm size so it works at different distances
-  // on both iPad and Windows webcams.
-  const palm=dist(lm[0],lm[9]) || 0.1;
-  const pinch=dist(lm[4],lm[8])/palm;
-  // A generous normalized threshold makes the pinch easier to achieve on
-  // different cameras, resolutions and hand sizes.
-  return pinch<0.55;
+function fingerExtended(lm,mcp,pip,tip){
+  const wrist=lm[0], base=dist(wrist,lm[mcp])||0.1;
+  const tipD=dist(wrist,lm[tip])/base;
+  const pipD=dist(wrist,lm[pip])/base;
+  return tipD>1.30 && tipD>pipD*1.08;
+}
+function detectGesture(lm){
+  if(!lm || lm.length<21)return "None";
+  const index=fingerExtended(lm,5,6,8);
+  const middle=fingerExtended(lm,9,10,12);
+  const ring=fingerExtended(lm,13,14,16);
+  const pinky=fingerExtended(lm,17,18,20);
+  // One finger: index only. Two fingers: index + middle, ring/pinky folded.
+  if(index && middle && !ring && !pinky)return "Victory";
+  if(index && !middle && !ring && !pinky)return "Pointing_Up";
+  return "None";
 }
 function stableAction(name){
- const now=performance.now();
- if(name!==stableGesture){
-   stableGesture=name; stableSince=now; actionLock=false;
- }
- const held=stableGesture==="Pinch" ? now-stableSince : 0;
- return {gesture:stableGesture,held,ready:held>=2000};
+  const now=performance.now();
+  if(name!==stableGesture){
+    stableGesture=name;stableSince=now;actionLock=false;
+  }
+  const held=now-stableSince;
+  return {gesture:stableGesture,held,ready:held>=700};
 }
 function loop(){
  if(!running)return;
@@ -155,33 +162,30 @@ function loop(){
    const r=recognizer.recognizeForVideo(v,now);
    if(r.landmarks?.length){
      const lm=r.landmarks[0];
-     const rawG=pinchGesture(lm) ? "Pinch" : "None";
-     // Use the midpoint between thumb and index while pinching for a stable cursor.
-     const handPoint=pinchGesture(lm)
-       ? {x:(lm[4].x+lm[8].x)/2,y:(lm[4].y+lm[8].y)/2}
-       : lm[8];
-     const p=mapPoint(handPoint);
+     const rawG=detectGesture(lm);
+     const p=mapPoint(lm[8]);
      lastGoodHand=now;
-     // Smooth movement with a low-pass filter; same logic on iPad Safari and
-     // Windows Chrome/Edge.
-     const a=.28;
+     // Smooth cursor movement for both iPad Safari and Windows browsers.
+     const a=.25;
      cursor.x=cursor.visible ? cursor.x+(p.x-cursor.x)*a : p.x;
      cursor.y=cursor.visible ? cursor.y+(p.y-cursor.y)*a : p.y;
      cursor.visible=true;
      $("cursor").style.display="block";
      $("cursor").style.left=cursor.x+"px";$("cursor").style.top=cursor.y+"px";
      const s=stableAction(rawG);
-     if(s.gesture==="Pinch"){
+     if(s.gesture==="Victory"){
        $("gesture").style.display="block";
-       $("gesture").textContent="🤏 PINCH — HOLD 1 SEC";
-       $("bar").style.width=Math.min(100,s.held/1000*100)+"%";
+       $("gesture").textContent="✌️ SELECT";
+       $("bar").style.width=Math.min(100,s.held/700*100)+"%";
+     }else if(s.gesture==="Pointing_Up"){
+       $("gesture").style.display="block";
+       $("gesture").textContent="☝️ MOVE";
+       $("bar").style.width="0%";
      }else{
        $("gesture").style.display="none";$("bar").style.width="0%";
      }
-     // Gesture must remain stable for 2 seconds, then the cursor dwells over
-     // an item for 1 second before selecting it.
-     if(s.gesture==="Pinch" && s.ready && !actionLock){
-       actionLock=true;performGesture("Pinch",{x:cursor.x,y:cursor.y});
+     if(s.gesture==="Victory" && s.ready && !actionLock){
+       actionLock=true;performGesture("Victory",{x:cursor.x,y:cursor.y});
      }
    }else if(now-lastGoodHand>250){
      $("cursor").style.display="none";$("gesture").style.display="none";$("bar").style.width="0%";
@@ -192,33 +196,24 @@ function loop(){
 }
 let dwellTimer=null,dwellTarget=null,dwellStarted=0;
 function performGesture(gesture,p){
- if(gesture!=="Pinch")return;
+ if(gesture!=="Victory")return;
  const el=document.elementFromPoint(p.x,p.y);
- if(!el?.classList.contains("choice"))return;
- dwellTarget=el; dwellStarted=performance.now();
- $("gesture").textContent="☝️ HOLD 1 SEC";
- $("bar").style.width="0%";
- const tick=()=>{
-   if(dwellTarget!==el || !running)return;
-   const v=$("video"), lmTarget=cursor;
-   const r=el.getBoundingClientRect();
-   if(lmTarget.x<r.left||lmTarget.x>r.right||lmTarget.y<r.top||lmTarget.y>r.bottom){
-     dwellTarget=null;$("bar").style.width="0%";return;
+ if(mode==="pic"||mode==="missing"){
+   if(el?.classList.contains("choice"))el.click();
+ }else if(mode==="sent"){
+   if(!dragging){
+     if(el?.dataset?.word){dragging=el.dataset.word;el.style.opacity=".45";speak(dragging.toLowerCase())}
+   }else{
+     const ans=$("answer"),r=ans.getBoundingClientRect();
+     if(p.x>=r.left&&p.x<=r.right&&p.y>=r.top&&p.y<=r.bottom){
+       const btn=[...$("words").children].find(x=>x.dataset.word===dragging);
+       if(btn){btn.style.opacity="1";tryPlace(dragging,btn)}
+     }
+     dragging=null;
    }
-   const progress=Math.min(100,(performance.now()-dwellStarted)/1000*100);
-   $("bar").style.width=progress+"%";
-   if(progress>=100){
-     el.click();
-     dwellTarget=null;
-     $("bar").style.width="0%";
-     $("gesture").style.display="none";
-     setTimeout(()=>{actionLock=false},400);
-     return;
-   }
-   requestAnimationFrame(tick);
- };
- cancelAnimationFrame(dwellTimer);
- dwellTimer=requestAnimationFrame(tick);
+ }
+ // Prevent a single Victory gesture from firing twice.
+ setTimeout(()=>{actionLock=false;stableGesture="";stableSince=performance.now()},700);
 }
 window.addEventListener("beforeunload",()=>{if(stream)stream.getTracks().forEach(t=>t.stop())});
 </script>
