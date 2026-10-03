@@ -31,7 +31,7 @@ button{border:0;border-radius:18px;padding:18px 24px;font-size:23px;font-weight:
 <main>
 <section id="menu" class="panel">
 <h2>English Gesture Game</h2>
-<p class="instruction">☝️ Point and move • Hold on an item for 1 second to select</p>
+<p class="instruction">☝️ Point and move • 🤏 Pinch and hold 1 second to select</p>
 <div class="menu">
 <button class="primary" id="wordGame">🍎 Word → Picture</button>
 <button class="green" id="sentenceGame">🧩 Build the Sentence</button>
@@ -67,7 +67,7 @@ function wordGame(){mode="pic";showGame("WORD → PICTURE");nextPic()}
 function nextPic(){
  const item=pics[Math.floor(Math.random()*pics.length)];
  let opts=[item[1]];while(opts.length<3){let x=pics[Math.floor(Math.random()*pics.length)][1];if(!opts.includes(x))opts.push(x)}opts.sort(()=>Math.random()-.5);
- $("content").innerHTML=`<div class="target">${item[0]}</div><p class="instruction">Point to a word and hold for 1 second.</p><div class="choices" id="choices"></div>`;
+ $("content").innerHTML=`<div class="target">${item[0]}</div><p class="instruction">Point to a word, then 🤏 pinch and hold for 1 second.</p><div class="choices" id="choices"></div>`;
  opts.forEach(w=>{const b=document.createElement("button");b.className="choice";b.textContent=w;b.onclick=()=>answerPic(w===item[1],item[1]);$("choices").appendChild(b)});speak("What is this?")
 }
 function answerPic(ok,w){if(ok){scoreUp();status("✓ Correct!",true);speak("Correct. "+w);setTimeout(nextPic,850)}else{status("Try again",false);speak("Try again")}}
@@ -75,7 +75,7 @@ function sentenceGame(){mode="sent";showGame("BUILD THE SENTENCE");newSentence()
 function newSentence(){
  target=sentences[Math.floor(Math.random()*sentences.length)].slice();placed=[];
  const pool=[...target].sort(()=>Math.random()-.5);
- $("content").innerHTML=`<p class="instruction">☝️ Point at a word • Point to a word, hold for 1 second, then move it to the answer area.</p><div class="answer" id="answer"></div><div class="choices" id="words"></div>`;
+ $("content").innerHTML=`<p class="instruction">☝️ Point at a word • Point to a word, 🤏 pinch and hold 1 second, then move it to the answer area.</p><div class="answer" id="answer"></div><div class="choices" id="words"></div>`;
  pool.forEach(w=>{const b=document.createElement("button");b.className="choice";b.textContent=w;b.dataset.word=w;b.onclick=()=>tryPlace(w,b);$("words").appendChild(b)})
 }
 function tryPlace(w,b){if(w!==target[placed.length]){status("Think again",false);speak("Try again");return}placed.push(w);b.remove();const d=document.createElement("span");d.className="word";d.textContent=w;$("answer").appendChild(d);speak(w.toLowerCase());if(placed.length===target.length){scoreUp();status("⭐ Excellent!",true);speak(target.join(" "));setTimeout(newSentence,1100)}}
@@ -126,19 +126,13 @@ function mapPoint(lm){
   return {x:(1-lm.x)*window.innerWidth,y:lm.y*window.innerHeight};
 }
 function dist(a,b){const dx=a.x-b.x,dy=a.y-b.y;return Math.hypot(dx,dy)}
-function fingerPointing(lm){
+function pinchGesture(lm){
   if(!lm || lm.length<21)return false;
-  // Hand-size normalized measurements make this work at different distances
-  // from iPad and Windows webcams.
+  // Normalize pinch distance by palm size so it works at different distances
+  // on both iPad and Windows webcams.
   const palm=dist(lm[0],lm[9]) || 0.1;
-  const indexTip=dist(lm[8],lm[0])/palm;
-  const indexPip=dist(lm[6],lm[0])/palm;
-  const middleTip=dist(lm[12],lm[0])/palm;
-  const ringTip=dist(lm[16],lm[0])/palm;
-  const pinkyTip=dist(lm[20],lm[0])/palm;
-  // Index must be clearly extended; the other three fingers should be folded.
-  return indexTip>1.35 && indexTip>indexPip*1.12 &&
-         middleTip<1.45 && ringTip<1.40 && pinkyTip<1.35;
+  const pinch=dist(lm[4],lm[8])/palm;
+  return pinch<0.38;
 }
 function stableAction(name){
  const now=performance.now();
@@ -159,8 +153,12 @@ function loop(){
    const r=recognizer.recognizeForVideo(v,now);
    if(r.landmarks?.length){
      const lm=r.landmarks[0];
-     const rawG=fingerPointing(lm) ? "Pointing_Up" : "None";
-     const p=mapPoint(lm[8]);
+     const rawG=pinchGesture(lm) ? "Pinch" : "None";
+     // Use the midpoint between thumb and index while pinching for a stable cursor.
+     const handPoint=pinchGesture(lm)
+       ? {x:(lm[4].x+lm[8].x)/2,y:(lm[4].y+lm[8].y)/2}
+       : lm[8];
+     const p=mapPoint(handPoint);
      lastGoodHand=now;
      // Smooth movement with a low-pass filter; same logic on iPad Safari and
      // Windows Chrome/Edge.
@@ -171,17 +169,17 @@ function loop(){
      $("cursor").style.display="block";
      $("cursor").style.left=cursor.x+"px";$("cursor").style.top=cursor.y+"px";
      const s=stableAction(rawG);
-     if(s.gesture==="Pointing_Up"){
+     if(s.gesture==="Pinch"){
        $("gesture").style.display="block";
-       $("gesture").textContent="☝️ POINT — HOLD 1 SEC";
+       $("gesture").textContent="🤏 PINCH — HOLD 1 SEC";
        $("bar").style.width=Math.min(100,s.held/1000*100)+"%";
      }else{
        $("gesture").style.display="none";$("bar").style.width="0%";
      }
      // Gesture must remain stable for 2 seconds, then the cursor dwells over
      // an item for 1 second before selecting it.
-     if(s.gesture==="Pointing_Up" && s.ready && !actionLock){
-       actionLock=true;performGesture("Pointing_Up",{x:cursor.x,y:cursor.y});
+     if(s.gesture==="Pinch" && s.ready && !actionLock){
+       actionLock=true;performGesture("Pinch",{x:cursor.x,y:cursor.y});
      }
    }else if(now-lastGoodHand>250){
      $("cursor").style.display="none";$("gesture").style.display="none";$("bar").style.width="0%";
@@ -192,7 +190,7 @@ function loop(){
 }
 let dwellTimer=null,dwellTarget=null,dwellStarted=0;
 function performGesture(gesture,p){
- if(gesture!=="Pointing_Up")return;
+ if(gesture!=="Pinch")return;
  const el=document.elementFromPoint(p.x,p.y);
  if(!el?.classList.contains("choice"))return;
  dwellTarget=el; dwellStarted=performance.now();
