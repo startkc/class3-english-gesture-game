@@ -31,7 +31,7 @@ button{border:0;border-radius:18px;padding:18px 24px;font-size:23px;font-weight:
 <main>
 <section id="menu" class="panel">
 <h2>English Gesture Game</h2>
-<p class="instruction">☝️ Point • 👍 Select • ✊ Grab • ✋ Cancel • ✌️ Next</p>
+<p class="instruction">☝️ Point and move • Hold on an item for 1 second to select</p>
 <div class="menu">
 <button class="primary" id="wordGame">🍎 Word → Picture</button>
 <button class="green" id="sentenceGame">🧩 Build the Sentence</button>
@@ -67,7 +67,7 @@ function wordGame(){mode="pic";showGame("WORD → PICTURE");nextPic()}
 function nextPic(){
  const item=pics[Math.floor(Math.random()*pics.length)];
  let opts=[item[1]];while(opts.length<3){let x=pics[Math.floor(Math.random()*pics.length)][1];if(!opts.includes(x))opts.push(x)}opts.sort(()=>Math.random()-.5);
- $("content").innerHTML=`<div class="target">${item[0]}</div><p class="instruction">Point to a word, then 👍 HOLD for 1 second to select.</p><div class="choices" id="choices"></div>`;
+ $("content").innerHTML=`<div class="target">${item[0]}</div><p class="instruction">Point to a word and hold for 1 second.</p><div class="choices" id="choices"></div>`;
  opts.forEach(w=>{const b=document.createElement("button");b.className="choice";b.textContent=w;b.onclick=()=>answerPic(w===item[1],item[1]);$("choices").appendChild(b)});speak("What is this?")
 }
 function answerPic(ok,w){if(ok){scoreUp();status("✓ Correct!",true);speak("Correct. "+w);setTimeout(nextPic,850)}else{status("Try again",false);speak("Try again")}}
@@ -75,7 +75,7 @@ function sentenceGame(){mode="sent";showGame("BUILD THE SENTENCE");newSentence()
 function newSentence(){
  target=sentences[Math.floor(Math.random()*sentences.length)].slice();placed=[];
  const pool=[...target].sort(()=>Math.random()-.5);
- $("content").innerHTML=`<p class="instruction">☝️ Point at a word • ✊ HOLD 1 sec to pick up • Point to ANSWER • 👍 HOLD 1 sec to drop.</p><div class="answer" id="answer"></div><div class="choices" id="words"></div>`;
+ $("content").innerHTML=`<p class="instruction">☝️ Point at a word • Point to a word, hold for 1 second, then move it to the answer area.</p><div class="answer" id="answer"></div><div class="choices" id="words"></div>`;
  pool.forEach(w=>{const b=document.createElement("button");b.className="choice";b.textContent=w;b.dataset.word=w;b.onclick=()=>tryPlace(w,b);$("words").appendChild(b)})
 }
 function tryPlace(w,b){if(w!==target[placed.length]){status("Think again",false);speak("Try again");return}placed.push(w);b.remove();const d=document.createElement("span");d.className="word";d.textContent=w;$("answer").appendChild(d);speak(w.toLowerCase());if(placed.length===target.length){scoreUp();status("⭐ Excellent!",true);speak(target.join(" "));setTimeout(newSentence,1100)}}
@@ -97,7 +97,7 @@ async function startCamera(){
        baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",delegate:"GPU"},
        runningMode:"VIDEO",numHands:1,
        minHandDetectionConfidence:.50,minHandPresenceConfidence:.50,minTrackingConfidence:.50,
-       cannedGesturesClassifierOptions:{scoreThreshold:.45,categoryAllowlist:["Thumb_Up","Closed_Fist","Open_Palm","Victory","Pointing_Up"]}
+       cannedGesturesClassifierOptions:{scoreThreshold:.45,categoryAllowlist:["Pointing_Up"]}
      });
    }catch(gpuError){
      console.warn("GPU delegate failed; retrying with CPU",gpuError);
@@ -126,47 +126,27 @@ function mapPoint(lm){
   return {x:(1-lm.x)*window.innerWidth,y:lm.y*window.innerHeight};
 }
 function dist(a,b){const dx=a.x-b.x,dy=a.y-b.y;return Math.hypot(dx,dy)}
-function angle(a,b,c){
-  const ab={x:a.x-b.x,y:a.y-b.y},cb={x:c.x-b.x,y:c.y-b.y};
-  const den=Math.hypot(ab.x,ab.y)*Math.hypot(cb.x,cb.y);
-  if(!den)return 0;
-  return Math.acos(Math.max(-1,Math.min(1,(ab.x*cb.x+ab.y*cb.y)/den)))*180/Math.PI;
-}
-function fingerExtended(lm,mcp,pip,tip){
-  return angle(lm[mcp],lm[pip],lm[tip])>155 &&
-         dist(lm[tip],lm[mcp])>dist(lm[pip],lm[mcp])*1.12;
-}
-function detectHand(lm){
-  if(!lm||lm.length<21)return "None";
-  const index=fingerExtended(lm,5,6,8);
-  const middle=fingerExtended(lm,9,10,12);
-  const ring=fingerExtended(lm,13,14,16);
-  const pinky=fingerExtended(lm,17,18,20);
-  const thumb=angle(lm[2],lm[3],lm[4])>150 &&
-              dist(lm[4],lm[2])>dist(lm[3],lm[2])*1.10;
-  const thumbUp=thumb && lm[4].y < lm[2].y-0.06;
-  // Distinct hand shapes, detected directly from landmarks rather than the
-  // MediaPipe gesture label. This is more tolerant across iPad and Windows webcams.
-  if(thumbUp && !index && !middle && !ring && !pinky)return "Thumb_Up";
-  if(index && middle && !ring && !pinky)return "Victory";
-  if(index && !middle && !ring && !pinky)return "Pointing_Up";
-  if(index && middle && ring && pinky && thumb)return "Open_Palm";
-  if(!index && !middle && !ring && !pinky && !thumb)return "Closed_Fist";
-  return "None";
+function fingerPointing(lm){
+  if(!lm || lm.length<21)return false;
+  // Hand-size normalized measurements make this work at different distances
+  // from iPad and Windows webcams.
+  const palm=dist(lm[0],lm[9]) || 0.1;
+  const indexTip=dist(lm[8],lm[0])/palm;
+  const indexPip=dist(lm[6],lm[0])/palm;
+  const middleTip=dist(lm[12],lm[0])/palm;
+  const ringTip=dist(lm[16],lm[0])/palm;
+  const pinkyTip=dist(lm[20],lm[0])/palm;
+  // Index must be clearly extended; the other three fingers should be folded.
+  return indexTip>1.35 && indexTip>indexPip*1.12 &&
+         middleTip<1.45 && ringTip<1.40 && pinkyTip<1.35;
 }
 function stableAction(name){
  const now=performance.now();
- gestureHistory.push(name);
- if(gestureHistory.length>7) gestureHistory.shift();
- // Use the majority of the last few frames so one bad frame cannot cancel a gesture.
- const counts={};
- gestureHistory.forEach(g=>counts[g]=(counts[g]||0)+1);
- let smooth="None",best=0;
- for(const g of Object.keys(counts)){if(g!=="None"&&counts[g]>best){best=counts[g];smooth=g}}
- if(best<3) smooth="None";
- if(smooth!==stableGesture){stableGesture=smooth;stableSince=now;actionLock=false}
- const held=smooth===stableGesture ? now-stableSince : 0;
- return {gesture:smooth,held,ready:held>=2000};
+ if(name!==stableGesture){
+   stableGesture=name; stableSince=now; actionLock=false;
+ }
+ const held=stableGesture==="Pointing_Up" ? now-stableSince : 0;
+ return {gesture:stableGesture,held,ready:held>=2000};
 }
 function loop(){
  if(!running)return;
@@ -179,26 +159,29 @@ function loop(){
    const r=recognizer.recognizeForVideo(v,now);
    if(r.landmarks?.length){
      const lm=r.landmarks[0];
-     const rawG=detectHand(lm);
+     const rawG=fingerPointing(lm) ? "Pointing_Up" : "None";
      const p=mapPoint(lm[8]);
      lastGoodHand=now;
-     // Smooth cursor movement so small landmark jitter is less visible.
-     const a=.32;
+     // Smooth movement with a low-pass filter; same logic on iPad Safari and
+     // Windows Chrome/Edge.
+     const a=.22;
      cursor.x=cursor.visible ? cursor.x+(p.x-cursor.x)*a : p.x;
      cursor.y=cursor.visible ? cursor.y+(p.y-cursor.y)*a : p.y;
      cursor.visible=true;
      $("cursor").style.display="block";
      $("cursor").style.left=cursor.x+"px";$("cursor").style.top=cursor.y+"px";
      const s=stableAction(rawG);
-     const labels={Pointing_Up:"☝️ POINT",Thumb_Up:"👍 SELECT",Closed_Fist:"✊ GRAB",Open_Palm:"✋ CANCEL",Victory:"✌️ NEXT"};
-     if(s.gesture!=="None"){
-       $("gesture").style.display="block";$("gesture").textContent=labels[s.gesture]+" — HOLD 1 SEC";
+     if(s.gesture==="Pointing_Up"){
+       $("gesture").style.display="block";
+       $("gesture").textContent="☝️ POINT — HOLD 1 SEC";
        $("bar").style.width=Math.min(100,s.held/1000*100)+"%";
      }else{
        $("gesture").style.display="none";$("bar").style.width="0%";
      }
-     if(s.gesture!=="None" && s.ready && !actionLock){
-       actionLock=true;performGesture(s.gesture,{x:cursor.x,y:cursor.y});
+     // Gesture must remain stable for 2 seconds, then the cursor dwells over
+     // an item for 1 second before selecting it.
+     if(s.gesture==="Pointing_Up" && s.ready && !actionLock){
+       actionLock=true;performGesture("Pointing_Up",{x:cursor.x,y:cursor.y});
      }
    }else if(now-lastGoodHand>250){
      $("cursor").style.display="none";$("gesture").style.display="none";$("bar").style.width="0%";
@@ -207,24 +190,35 @@ function loop(){
  }
  requestAnimationFrame(loop)
 }
+let dwellTimer=null,dwellTarget=null,dwellStarted=0;
 function performGesture(gesture,p){
- if(gesture==="Thumb_Up" && (mode==="pic"||mode==="missing")){
-   const el=document.elementFromPoint(p.x,p.y);if(el?.classList.contains("choice"))el.click();
- } else if(mode==="sent"){
-   if(gesture==="Closed_Fist" && !dragging){
-     const el=document.elementFromPoint(p.x,p.y);
-     if(el?.dataset?.word){dragging=el.dataset.word;el.style.opacity=".45";speak(dragging.toLowerCase())}
-   } else if(gesture==="Thumb_Up" && dragging){
-     const ans=$("answer"),r=ans.getBoundingClientRect();
-     if(p.x>=r.left&&p.x<=r.right&&p.y>=r.top&&p.y<=r.bottom){
-       const btn=[...$("words").children].find(x=>x.dataset.word===dragging);
-       if(btn){btn.style.opacity="1";tryPlace(dragging,btn)}
-     }
-     dragging=null;
+ if(gesture!=="Pointing_Up")return;
+ const el=document.elementFromPoint(p.x,p.y);
+ if(!el?.classList.contains("choice"))return;
+ dwellTarget=el; dwellStarted=performance.now();
+ $("gesture").textContent="☝️ HOLD 1 SEC";
+ $("bar").style.width="0%";
+ const tick=()=>{
+   if(dwellTarget!==el || !running)return;
+   const v=$("video"), lmTarget=cursor;
+   const r=el.getBoundingClientRect();
+   if(lmTarget.x<r.left||lmTarget.x>r.right||lmTarget.y<r.top||lmTarget.y>r.bottom){
+     dwellTarget=null;$("bar").style.width="0%";return;
    }
- } else if(gesture==="Open_Palm"){home()}
- else if(gesture==="Victory"){ if(mode==="pic")nextPic(); else if(mode==="missing")nextMissing(); else if(mode==="sent")newSentence(); }
- setTimeout(()=>{actionLock=false},500)
+   const progress=Math.min(100,(performance.now()-dwellStarted)/1000*100);
+   $("bar").style.width=progress+"%";
+   if(progress>=100){
+     el.click();
+     dwellTarget=null;
+     $("bar").style.width="0%";
+     $("gesture").style.display="none";
+     setTimeout(()=>{actionLock=false},400);
+     return;
+   }
+   requestAnimationFrame(tick);
+ };
+ cancelAnimationFrame(dwellTimer);
+ dwellTimer=requestAnimationFrame(tick);
 }
 window.addEventListener("beforeunload",()=>{if(stream)stream.getTracks().forEach(t=>t.stop())});
 </script>
