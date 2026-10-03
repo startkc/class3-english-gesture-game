@@ -83,20 +83,40 @@ function nextMissing(){const q=missing[Math.floor(Math.random()*missing.length)]
 $("wordGame").onclick=wordGame;$("sentenceGame").onclick=sentenceGame;$("missingGame").onclick=missingGame;
 async function startCamera(){
  try{
-   $("setup").textContent="Loading hand gesture model…";
-   const vision=await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm");
-   recognizer=await GestureRecognizer.createFromOptions(vision,{
-     baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",delegate:"GPU"},
-     runningMode:"VIDEO",numHands:1,
-     minHandDetectionConfidence:.65,minHandPresenceConfidence:.65,minTrackingConfidence:.65,
-     cannedGesturesClassifierOptions:{scoreThreshold:.70,categoryAllowlist:["Open_Palm","Pointing_Up"]}
-   });
-   stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"user",width:{ideal:1280},height:{ideal:720}},audio:false});
+   if(!window.isSecureContext){$("setup").textContent="This page is not secure. Open the GitHub Pages HTTPS link directly in Safari.";return}
+   if(!navigator.mediaDevices?.getUserMedia){$("setup").textContent="Camera access is not available here. Open this page directly in Safari, not inside another app.";return}
+   $("setup").textContent="Requesting camera access…";
+   stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"user"},width:{ideal:1280},height:{ideal:720}},audio:false});
    $("video").srcObject=stream;$("video").style.display="block";
-   await $("video").play();running=true;$("setup").textContent="✋ Gesture camera is ready. Stand 1–2 metres away.";
+   await $("video").play();
+   $("setup").textContent="Camera is on. Loading hand-gesture recognition…";
+   const vision=await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm");
+   try{
+     recognizer=await GestureRecognizer.createFromOptions(vision,{
+       baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",delegate:"GPU"},
+       runningMode:"VIDEO",numHands:1,
+       minHandDetectionConfidence:.60,minHandPresenceConfidence:.60,minTrackingConfidence:.60,
+       cannedGesturesClassifierOptions:{scoreThreshold:.60,categoryAllowlist:["Open_Palm","Pointing_Up"]}
+     });
+   }catch(gpuError){
+     console.warn("GPU delegate failed; retrying with CPU",gpuError);
+     recognizer=await GestureRecognizer.createFromOptions(vision,{
+       baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",delegate:"CPU"},
+       runningMode:"VIDEO",numHands:1,
+       minHandDetectionConfidence:.60,minHandPresenceConfidence:.60,minTrackingConfidence:.60,
+       cannedGesturesClassifierOptions:{scoreThreshold:.60,categoryAllowlist:["Open_Palm","Pointing_Up"]}
+     });
+   }
+   running=true;$("setup").textContent="✋ Camera ready. Stand 1–2 metres away and point at the screen.";
    speak("Camera ready. Point and use your open palm.");
    requestAnimationFrame(loop);
- }catch(e){console.error(e);$("setup").textContent="Camera/model could not start. Allow camera access in Safari and make sure this page is HTTPS.";speak("Please allow camera access.")}
+ }catch(e){
+   console.error(e);
+   if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}
+   $("video").style.display="none";
+   $("setup").textContent="Camera could not start. In Safari, allow Camera for this website, then reload and try again.";
+   speak("Please allow camera access in Safari.");
+ }
 }
 $("cameraBtn").onclick=startCamera;
 function mapPoint(lm){const v=$("video");const rect=v.getBoundingClientRect();return {x:rect.left+(1-lm.x)*rect.width,y:rect.top+lm.y*rect.height}}
