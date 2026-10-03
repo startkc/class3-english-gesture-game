@@ -132,14 +132,16 @@ function pinchGesture(lm){
   // on both iPad and Windows webcams.
   const palm=dist(lm[0],lm[9]) || 0.1;
   const pinch=dist(lm[4],lm[8])/palm;
-  return pinch<0.38;
+  // A generous normalized threshold makes the pinch easier to achieve on
+  // different cameras, resolutions and hand sizes.
+  return pinch<0.55;
 }
 function stableAction(name){
  const now=performance.now();
  if(name!==stableGesture){
    stableGesture=name; stableSince=now; actionLock=false;
  }
- const held=stableGesture==="Pointing_Up" ? now-stableSince : 0;
+ const held=stableGesture==="Pinch" ? now-stableSince : 0;
  return {gesture:stableGesture,held,ready:held>=2000};
 }
 function loop(){
@@ -162,7 +164,7 @@ function loop(){
      lastGoodHand=now;
      // Smooth movement with a low-pass filter; same logic on iPad Safari and
      // Windows Chrome/Edge.
-     const a=.22;
+     const a=.28;
      cursor.x=cursor.visible ? cursor.x+(p.x-cursor.x)*a : p.x;
      cursor.y=cursor.visible ? cursor.y+(p.y-cursor.y)*a : p.y;
      cursor.visible=true;
