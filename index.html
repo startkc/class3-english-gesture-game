@@ -18,7 +18,7 @@ button{border:0;border-radius:18px;padding:18px 24px;font-size:23px;font-weight:
 .target{font-size:90px;margin:15px}.choices{display:flex;gap:16px;justify-content:center;flex-wrap:wrap}.choice{background:var(--blue);color:white;min-width:210px}
 .answer{min-height:105px;background:#eef1f6;border-radius:20px;padding:16px;display:flex;gap:10px;justify-content:center;align-items:center;flex-wrap:wrap;margin:16px 0}.word{background:var(--green);color:white;border-radius:12px;padding:11px 18px;font-size:27px;font-weight:700}
 .status{min-height:38px;font-size:27px;font-weight:700;margin:10px}.good{color:var(--green)}.bad{color:var(--red)}
-#video{position:fixed;right:10px;bottom:10px;width:190px;height:140px;object-fit:cover;transform:scaleX(-1);border-radius:14px;opacity:.20;display:none;border:2px solid #fff;z-index:10}
+#video{position:fixed;right:10px;bottom:10px;width:190px;height:140px;object-fit:cover;transform:scaleX(-1);border-radius:14px;opacity:.20;display:none;border:2px solid #fff;z-index:10;pointer-events:none}
 #cursor{position:fixed;width:50px;height:50px;border:5px solid var(--blue);border-radius:50%;display:none;pointer-events:none;z-index:20;transform:translate(-50%,-50%);box-shadow:0 0 0 3px rgba(255,255,255,.8)}
 #gesture{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#fff;border:2px solid var(--green);border-radius:24px;padding:10px 18px;font-weight:700;display:none;z-index:21}
 #bar{position:fixed;left:50%;bottom:0;transform:translateX(-50%);width:0;height:6px;background:var(--green);z-index:22}
@@ -119,7 +119,11 @@ async function startCamera(){
  }
 }
 $("cameraBtn").onclick=startCamera;
-function mapPoint(lm){const v=$("video");const rect=v.getBoundingClientRect();return {x:rect.left+(1-lm.x)*rect.width,y:rect.top+lm.y*rect.height}}
+function mapPoint(lm){
+  // Map the hand position to the ENTIRE iPad screen, not the small camera preview.
+  // The camera preview is mirrored, so reverse X for natural left/right movement.
+  return {x:(1-lm.x)*window.innerWidth,y:lm.y*window.innerHeight};
+}
 function stableAction(name){const now=performance.now();if(name!==stableGesture){stableGesture=name;stableSince=now;actionLock=false}const held=now-stableSince;return {held,ready:held>=650}}
 function loop(){
  if(!running)return;
