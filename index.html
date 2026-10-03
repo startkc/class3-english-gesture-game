@@ -52,6 +52,7 @@ import {GestureRecognizer,FilesetResolver} from "https://cdn.jsdelivr.net/npm/@m
 const $=id=>document.getElementById(id);
 let recognizer=null,stream=null,running=false,lastVideo=-1;
 let cursor={x:0,y:0,visible:false},stableGesture="",stableSince=0,actionLock=false;
+let gestureHistory=[],lastInference=0,lastGoodHand=0;
 let score=0,mode="",target=[],placed=[],dragging=null;
 function speak(text){if(!("speechSynthesis" in window))return;speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang="en-IN";u.rate=.82;speechSynthesis.speak(u)}
 function scoreUp(){score++;$("score").textContent=score}
@@ -95,16 +96,16 @@ async function startCamera(){
      recognizer=await GestureRecognizer.createFromOptions(vision,{
        baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",delegate:"GPU"},
        runningMode:"VIDEO",numHands:1,
-       minHandDetectionConfidence:.60,minHandPresenceConfidence:.60,minTrackingConfidence:.60,
-       cannedGesturesClassifierOptions:{scoreThreshold:.60,categoryAllowlist:["Open_Palm","Pointing_Up"]}
+       minHandDetectionConfidence:.50,minHandPresenceConfidence:.50,minTrackingConfidence:.50,
+       cannedGesturesClassifierOptions:{scoreThreshold:.45,categoryAllowlist:["Open_Palm","Pointing_Up"]}
      });
    }catch(gpuError){
      console.warn("GPU delegate failed; retrying with CPU",gpuError);
      recognizer=await GestureRecognizer.createFromOptions(vision,{
        baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",delegate:"CPU"},
        runningMode:"VIDEO",numHands:1,
-       minHandDetectionConfidence:.60,minHandPresenceConfidence:.60,minTrackingConfidence:.60,
-       cannedGesturesClassifierOptions:{scoreThreshold:.60,categoryAllowlist:["Open_Palm","Pointing_Up"]}
+       minHandDetectionConfidence:.50,minHandPresenceConfidence:.50,minTrackingConfidence:.50,
+       cannedGesturesClassifierOptions:{scoreThreshold:.45,categoryAllowlist:["Open_Palm","Pointing_Up"]}
      });
    }
    running=true;$("setup").textContent="✋ Camera ready. Stand 1–2 metres away and point at the screen.";
@@ -124,21 +125,53 @@ function mapPoint(lm){
   // The camera preview is mirrored, so reverse X for natural left/right movement.
   return {x:(1-lm.x)*window.innerWidth,y:lm.y*window.innerHeight};
 }
-function stableAction(name){const now=performance.now();if(name!==stableGesture){stableGesture=name;stableSince=now;actionLock=false}const held=now-stableSince;return {held,ready:held>=650}}
+function stableAction(name){
+ const now=performance.now();
+ gestureHistory.push(name);
+ if(gestureHistory.length>7) gestureHistory.shift();
+ // Use the majority of the last few frames so one bad frame cannot cancel a gesture.
+ const counts={};
+ gestureHistory.forEach(g=>counts[g]=(counts[g]||0)+1);
+ let smooth="None",best=0;
+ for(const g of Object.keys(counts)){if(g!=="None"&&counts[g]>best){best=counts[g];smooth=g}}
+ if(best<3) smooth="None";
+ if(smooth!==stableGesture){stableGesture=smooth;stableSince=now;actionLock=false}
+ const held=smooth===stableGesture ? now-stableSince : 0;
+ return {gesture:smooth,held,ready:held>=500};
+}
 function loop(){
  if(!running)return;
  const v=$("video");
- if(v.readyState>=2 && v.currentTime!==lastVideo){
-   lastVideo=v.currentTime;
-   const r=recognizer.recognizeForVideo(v,performance.now());
+ const now=performance.now();
+ // Limit inference to about 15 FPS on iPad. This reduces CPU/GPU load and makes
+ // recognition more stable while keeping cursor movement responsive.
+ if(v.readyState>=2 && v.currentTime!==lastVideo && now-lastInference>=65){
+   lastVideo=v.currentTime; lastInference=now;
+   const r=recognizer.recognizeForVideo(v,now);
    if(r.landmarks?.length){
-     const lm=r.landmarks[0];const g=r.gestures?.[0]?.[0]?.categoryName||"None";const p=mapPoint(lm[8]);
-     cursor.x=p.x;cursor.y=p.y;cursor.visible=true;
-     $("cursor").style.display="block";$("cursor").style.left=p.x+"px";$("cursor").style.top=p.y+"px";
-     const s=stableAction(g);
-     if(g==="Open_Palm"){$("gesture").style.display="block";$("gesture").textContent="✋ OPEN PALM";$("bar").style.width=Math.min(100,s.held/650*100)+"%"}else{$("gesture").style.display="none";$("bar").style.width="0%"}
-     if(g==="Open_Palm" && s.ready && !actionLock){actionLock=true;performPalm(p)}
-   }else{$("cursor").style.display="none";$("gesture").style.display="none";$("bar").style.width="0%";stableGesture="";stableSince=0;actionLock=false}
+     const lm=r.landmarks[0];
+     const rawG=r.gestures?.[0]?.[0]?.categoryName||"None";
+     const p=mapPoint(lm[8]);
+     lastGoodHand=now;
+     // Smooth cursor movement so small landmark jitter is less visible.
+     const a=.32;
+     cursor.x=cursor.visible ? cursor.x+(p.x-cursor.x)*a : p.x;
+     cursor.y=cursor.visible ? cursor.y+(p.y-cursor.y)*a : p.y;
+     cursor.visible=true;
+     $("cursor").style.display="block";
+     $("cursor").style.left=cursor.x+"px";$("cursor").style.top=cursor.y+"px";
+     const s=stableAction(rawG);
+     if(s.gesture==="Open_Palm"){
+       $("gesture").style.display="block";$("gesture").textContent="✋ OPEN PALM — HOLD";
+       $("bar").style.width=Math.min(100,s.held/500*100)+"%";
+     }else{
+       $("gesture").style.display="none";$("bar").style.width="0%";
+     }
+     if(s.gesture==="Open_Palm" && s.ready && !actionLock){actionLock=true;performPalm({x:cursor.x,y:cursor.y})}
+   }else if(now-lastGoodHand>250){
+     $("cursor").style.display="none";$("gesture").style.display="none";$("bar").style.width="0%";
+     gestureHistory=[];stableGesture="";stableSince=0;actionLock=false;cursor.visible=false;
+   }
  }
  requestAnimationFrame(loop)
 }
